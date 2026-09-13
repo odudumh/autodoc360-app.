@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Car, Plus, X, Check, AlertTriangle, Settings, ShieldCheck, Disc, Wrench,
   Flame, Zap, FileText, Smartphone, MessageCircle, Bell, Trash2, Gauge, Loader2,
+  Mail, LogOut, MailCheck,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -71,7 +72,79 @@ const DEFAULT_TEMPLATE = [
   { category: "plugs", months: 14 },
 ];
 
+function LoginScreen() {
+  const [email, setEmail] = useState("");
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
+
+  async function handleSendLink() {
+    if (!email.trim() || !email.includes("@")) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    setSending(true);
+    setError("");
+    const { error: signInError } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { emailRedirectTo: window.location.origin },
+    });
+    setSending(false);
+    if (signInError) { setError(signInError.message); return; }
+    setSent(true);
+  }
+
+  return (
+    <div style={{ fontFamily: FONT_BODY, background: COLORS.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Inter:wght@400;500;600&display=swap');`}</style>
+      <div style={{ background: COLORS.card, borderRadius: 14, padding: 32, width: 360, border: `1px solid ${COLORS.border}`, textAlign: "center" }}>
+        <div style={{ width: 44, height: 44, borderRadius: 10, background: COLORS.ink, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+          <Car size={22} color="#fff" />
+        </div>
+        <div style={{ fontFamily: FONT_HEAD, fontWeight: 700, fontSize: 22, color: COLORS.ink, marginBottom: 6 }}>AutoDoc360</div>
+
+        {sent ? (
+          <>
+            <MailCheck size={30} color={COLORS.green} style={{ margin: "12px auto" }} />
+            <p style={{ color: COLORS.ink, fontWeight: 500, fontSize: 14.5, marginBottom: 6 }}>Check your email</p>
+            <p style={{ color: COLORS.inkSoft, fontSize: 13, lineHeight: 1.5 }}>
+              We sent a sign-in link to <strong>{email}</strong>. Open it on this device to log in \u2014 no password needed.
+            </p>
+          </>
+        ) : (
+          <>
+            <p style={{ color: COLORS.inkSoft, fontSize: 13.5, marginBottom: 18 }}>
+              Sign in with your email. We'll send a link \u2014 no password to remember.
+            </p>
+            <div style={{ position: "relative", marginBottom: 10 }}>
+              <Mail size={16} color={COLORS.inkSoft} style={{ position: "absolute", left: 12, top: 12 }} />
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                type="email"
+                onKeyDown={(e) => { if (e.key === "Enter") handleSendLink(); }}
+                style={{ width: "100%", padding: "10px 12px 10px 36px", borderRadius: 8, border: `1px solid ${COLORS.border}`, fontSize: 14, boxSizing: "border-box" }}
+              />
+            </div>
+            {error && <div style={{ color: COLORS.red, fontSize: 12.5, marginBottom: 10, textAlign: "left" }}>{error}</div>}
+            <button
+              className="ad-btn"
+              disabled={sending}
+              onClick={handleSendLink}
+              style={{ width: "100%", background: COLORS.ink, color: "#fff", padding: "11px 0", borderRadius: 8, fontSize: 14, fontWeight: 500 }}
+            >
+              {sending ? "Sending..." : "Send sign-in link"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  const [session, setSession] = useState(undefined); // undefined = still checking, null = logged out
   const [vehicles, setVehicles] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -91,6 +164,8 @@ export default function App() {
   const loadData = useCallback(async () => {
     setLoading(true);
     setErrorMsg("");
+    // RLS on the database already restricts these to the logged-in user's
+    // own rows, so no extra .eq("owner_id", ...) filter is needed here.
     const { data: vData, error: vErr } = await supabase
       .from("vehicles").select("*").order("created_at", { ascending: true });
     if (vErr) { setErrorMsg(vErr.message); setLoading(false); return; }
@@ -108,7 +183,25 @@ export default function App() {
     setLoading(false);
   }, [activeId]);
 
-  useEffect(() => { loadData(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Check for an existing session on load, and keep listening for
+  // sign-in / sign-out events (e.g. after clicking the emailed link).
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (session) loadData();
+  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    setVehicles([]);
+    setActiveId(null);
+  }
 
   const active = vehicles.find((v) => v.id === activeId) || vehicles[0];
 
@@ -137,7 +230,11 @@ export default function App() {
     setSaving(true);
     const { data: vRow, error: vErr } = await supabase
       .from("vehicles")
-      .insert({ name: newVehicleName.trim(), plate: newVehiclePlate.trim().toUpperCase() })
+      .insert({
+        name: newVehicleName.trim(),
+        plate: newVehiclePlate.trim().toUpperCase(),
+        owner_id: session.user.id,
+      })
       .select().single();
     if (vErr) { setFormError(vErr.message); setSaving(false); return; }
 
@@ -178,6 +275,21 @@ export default function App() {
     if (error) { setFormError(error.message); return; }
     setNewItemDate(""); setFormError(""); setShowAddItem(false);
     await loadData();
+  }
+
+  // Still checking whether a session exists
+  if (session === undefined) {
+    return (
+      <div style={{ fontFamily: FONT_BODY, background: COLORS.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Loader2 className="ad-spin" size={26} color={COLORS.ink} />
+        <style>{`.ad-spin { animation: adspin 1s linear infinite; } @keyframes adspin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  // No session -> show the login screen instead of any vehicle data
+  if (session === null) {
+    return <LoginScreen />;
   }
 
   if (loading) {
@@ -223,10 +335,16 @@ export default function App() {
             </div>
             <span style={{ fontFamily: FONT_HEAD, fontWeight: 700, fontSize: 22, color: COLORS.ink }}>AutoDoc360</span>
           </div>
-          <button className="ad-btn" onClick={() => setShowSettings(true)}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", padding: "8px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`, color: COLORS.inkSoft, fontSize: 13.5 }}>
-            <Settings size={15} /> Reminder settings
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button className="ad-btn" onClick={() => setShowSettings(true)}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", padding: "8px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`, color: COLORS.inkSoft, fontSize: 13.5 }}>
+              <Settings size={15} /> Reminder settings
+            </button>
+            <button className="ad-btn" onClick={handleSignOut} title={session?.user?.email}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", padding: "8px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`, color: COLORS.inkSoft, fontSize: 13.5 }}>
+              <LogOut size={15} />
+            </button>
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 20 }}>
