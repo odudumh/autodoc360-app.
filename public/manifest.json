@@ -1,0 +1,9 @@
+{
+  "name": "AutoDoc360",
+  "short_name": "AutoDoc360",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F0EFEA",
+  "theme_color": "#16283D",
+  "icons": []
+}
