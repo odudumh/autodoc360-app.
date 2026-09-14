@@ -64,6 +64,27 @@ const STATUS_META = {
   month: { label: "Due this month", color: COLORS.ink, bg: COLORS.navyBg },
   ok: { label: "On track", color: COLORS.green, bg: COLORS.greenBg },
 };
+
+// Groups categories for the health breakdown pills
+const HEALTH_GROUPS = [
+  { key: "documents", label: "Documents", categories: ["licence", "registration", "insurance", "extinguisher"] },
+  { key: "maintenance", label: "Maintenance", categories: ["oil", "service", "plugs", "custom"] },
+  { key: "tyres", label: "Tyres", categories: ["tyres"] },
+];
+function groupStatus(rows, categories) {
+  const inGroup = rows.filter((r) => categories.includes(r.category));
+  if (inGroup.length === 0) return "ok";
+  return inGroup.reduce((worst, r) => worseStatus(worst, r.status), "ok");
+}
+function healthScore(counts) {
+  const raw = 100 - counts.overdue * 18 - counts.soon * 9 - counts.month * 3;
+  return Math.max(0, Math.min(100, raw));
+}
+function healthLabel(score) {
+  if (score >= 85) return { label: "Good", color: COLORS.green };
+  if (score >= 60) return { label: "Fair", color: COLORS.gold };
+  return { label: "Needs attention", color: COLORS.red };
+}
 function formatDays(days) {
   if (days < 0) return `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`;
   if (days === 0) return "Due today";
@@ -127,7 +148,7 @@ function LoginScreen() {
           </>
         ) : (
           <>
-            <p style={{ color: COLORS.inkSoft, fontSize: 13.5, marginBottom: 18 }}>Sign in with your email \u2014 no password needed.</p>
+            <p style={{ color: COLORS.inkSoft, fontSize: 13.5, marginBottom: 18 }}>Sign in with your email — no password needed.</p>
             <div style={{ position: "relative", marginBottom: 10 }}>
               <Mail size={16} color={COLORS.inkSoft} style={{ position: "absolute", left: 12, top: 12 }} />
               <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email"
@@ -238,6 +259,9 @@ export default function App() {
     rows.forEach((r) => c[r.status]++);
     return c;
   }, [rows]);
+
+  const score = useMemo(() => healthScore(counts), [counts]);
+  const scoreMeta = healthLabel(score);
 
   const topAction = rows.length > 0 && rows[0].status !== "ok" ? rows[0] : null;
 
@@ -444,69 +468,99 @@ export default function App() {
           </div>
         ) : (
           <>
-            {/* Vehicle profile card */}
-            <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "16px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-              <div>
-                <div style={{ fontFamily: FONT_HEAD, fontWeight: 700, fontSize: 19, color: COLORS.ink }}>
-                  {active.name}{active.year ? ` \u2022 ${active.year}` : ""}
+            {/* Vehicle identity card with health score */}
+            <div style={{ background: COLORS.ink, borderRadius: 12, padding: "20px 20px", marginBottom: 16, color: "#fff" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 42, height: 42, borderRadius: 10, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Car size={21} color="#fff" />
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: FONT_HEAD, fontWeight: 700, fontSize: 19 }}>
+                      {active.name}{active.year ? ` \u00b7 ${active.year}` : ""}
+                    </div>
+                    <div style={{ fontSize: 12.5, opacity: 0.7, marginTop: 1, letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span>{active.plate}</span>
+                      {editingMileage ? (
+                        <input
+                          type="number" autoFocus defaultValue={active.current_mileage ?? ""} placeholder="Enter mileage"
+                          onBlur={(e) => updateVehicleMileage(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                          style={{ width: 100, fontSize: 12.5, padding: "2px 6px", borderRadius: 5, border: "1px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", color: "#fff" }}
+                        />
+                      ) : (
+                        <button className="ad-btn" onClick={() => setEditingMileage(true)}
+                          style={{ background: "none", color: "rgba(255,255,255,0.85)", fontSize: 12.5, padding: 0, textDecoration: "underline", textDecorationStyle: "dotted" }}>
+                          {active.current_mileage != null ? `\u00b7 ${formatKm(active.current_mileage)}` : "\u00b7 Add mileage"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: 12.5, color: COLORS.inkSoft, marginTop: 2, letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>{active.plate}</span>
-                  {editingMileage ? (
-                    <input
-                      type="number"
-                      autoFocus
-                      defaultValue={active.current_mileage ?? ""}
-                      placeholder="Enter mileage"
-                      onBlur={(e) => updateVehicleMileage(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                      style={{ width: 110, fontSize: 12.5, padding: "2px 6px", borderRadius: 5, border: `1px solid ${COLORS.border}` }}
-                    />
-                  ) : (
-                    <button className="ad-btn" onClick={() => setEditingMileage(true)}
-                      style={{ background: "none", color: COLORS.inkSoft, fontSize: 12.5, padding: 0, textDecoration: "underline", textDecorationStyle: "dotted" }}>
-                      {active.current_mileage != null ? `\u00b7 ${formatKm(active.current_mileage)}` : "\u00b7 Add mileage"}
-                    </button>
-                  )}
+                <button className="ad-btn" onClick={() => setShowHistory(true)}
+                  style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.12)", color: "#fff", padding: "8px 12px", borderRadius: 8, fontSize: 13, fontWeight: 500 }}>
+                  <History size={14} /> History ({vehicleHistory.length})
+                </button>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}>
+                  <span style={{ opacity: 0.8 }}>Vehicle health</span>
+                  <span style={{ fontWeight: 600 }}>{score} · {scoreMeta.label}</span>
+                </div>
+                <div style={{ height: 7, borderRadius: 4, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${score}%`, background: scoreMeta.color, borderRadius: 4, transition: "width 0.3s ease" }} />
                 </div>
               </div>
-              <button className="ad-btn" onClick={() => setShowHistory(true)}
-                style={{ display: "flex", alignItems: "center", gap: 6, background: COLORS.navyBg, color: COLORS.ink, padding: "8px 12px", borderRadius: 8, fontSize: 13, fontWeight: 500 }}>
-                <History size={14} /> Service history ({vehicleHistory.length})
-              </button>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {HEALTH_GROUPS.map((g) => {
+                  const st = groupStatus(rows, g.categories);
+                  const dotColor = STATUS_META[st].color;
+                  return (
+                    <div key={g.key} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.08)", padding: "5px 10px", borderRadius: 20, fontSize: 12 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: 4, background: dotColor, display: "inline-block" }} />
+                      {g.label}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Action Required hero */}
+            {/* Needs attention hero */}
             {topAction && (
               <div style={{ background: STATUS_META[topAction.status].bg, border: `1px solid ${STATUS_META[topAction.status].color}33`, borderRadius: 10, padding: "16px 18px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
                 <div>
                   <div style={{ fontSize: 11.5, fontWeight: 600, color: STATUS_META[topAction.status].color, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
-                    Action required
+                    Needs attention
                   </div>
                   <div style={{ fontFamily: FONT_HEAD, fontWeight: 700, fontSize: 17, color: COLORS.ink }}>{topAction.meta.label}</div>
                   <div style={{ fontSize: 13, color: COLORS.inkSoft, marginTop: 2 }}>
-                    {formatDays(topAction.days)} \u00b7 {formatDate(topAction.due_date)}
+                    {formatDays(topAction.days)} · {formatDate(topAction.due_date)}
                     {topAction.kmRemaining != null && ` \u00b7 ${formatKm(topAction.due_mileage)}`}
                   </div>
                 </div>
                 <button className="ad-btn" onClick={() => openCompleteModal(topAction)}
                   style={{ background: COLORS.ink, color: "#fff", padding: "10px 18px", borderRadius: 8, fontSize: 13.5, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
-                  Resolve now <ChevronRight size={14} />
+                  Complete service <ChevronRight size={14} />
                 </button>
               </div>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 10, marginBottom: 26 }}>
-              {[["overdue", "Overdue"], ["soon", "Due within 14 days"], ["month", "Due within 30 days"], ["ok", "On track"]].map(([key, label]) => (
-                <div key={key} style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 14 }}>
-                  <div style={{ fontSize: 26, fontFamily: FONT_HEAD, fontWeight: 700, color: STATUS_META[key].color }}>{counts[key]}</div>
-                  <div style={{ fontSize: 12.5, color: COLORS.inkSoft, marginTop: 2 }}>{label}</div>
-                </div>
-              ))}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10, marginBottom: 26 }}>
+              {[["overdue", "Overdue", COLORS.red], ["soonCombined", "Due soon", COLORS.gold], ["ok", "On track", COLORS.green]].map(([key, label, color]) => {
+                const value = key === "soonCombined" ? counts.soon + counts.month : counts[key];
+                return (
+                  <div key={key} style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 14 }}>
+                    <div style={{ fontSize: 26, fontFamily: FONT_HEAD, fontWeight: 700, color }}>{value}</div>
+                    <div style={{ fontSize: 12.5, color: COLORS.inkSoft, marginTop: 2 }}>{label}</div>
+                  </div>
+                );
+              })}
             </div>
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={{ fontFamily: FONT_HEAD, fontWeight: 600, fontSize: 17, color: COLORS.ink }}>Tracked items</span>
+              <span style={{ fontFamily: FONT_HEAD, fontWeight: 600, fontSize: 17, color: COLORS.ink }}>Maintenance & reminders</span>
               <button className="ad-btn" onClick={() => { setShowAddItem(true); setFormError(""); }}
                 style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", color: COLORS.ink, fontSize: 13.5, fontWeight: 500 }}>
                 <Plus size={15} /> Add item
@@ -538,7 +592,7 @@ export default function App() {
                       ) : (
                         <button className="ad-btn" onClick={() => setEditingItem(r.id)}
                           style={{ background: "none", color: COLORS.inkSoft, fontSize: 12.5, padding: 0, marginTop: 2 }}>
-                          {formatDate(r.due_date)}{r.due_mileage != null ? ` \u00b7 ${formatKm(r.due_mileage)}` : ""} \u00b7 edit
+                          {formatDate(r.due_date)}{r.due_mileage != null ? ` \u00b7 ${formatKm(r.due_mileage)}` : ""} · edit
                         </button>
                       )}
                     </div>
@@ -680,7 +734,7 @@ export default function App() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(22,40,61,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: COLORS.card, borderRadius: 12, padding: 24, width: 420, maxHeight: "80vh", overflowY: "auto", border: `1px solid ${COLORS.border}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <span style={{ fontFamily: FONT_HEAD, fontWeight: 600, fontSize: 18, color: COLORS.ink }}>Service history \u2014 {active.name}</span>
+              <span style={{ fontFamily: FONT_HEAD, fontWeight: 600, fontSize: 18, color: COLORS.ink }}>Service history — {active.name}</span>
               <button className="ad-btn" onClick={() => setShowHistory(false)} style={{ background: "none", color: COLORS.inkSoft }}><X size={18} /></button>
             </div>
             {vehicleHistory.length === 0 ? (
@@ -723,7 +777,7 @@ export default function App() {
               <button className="ad-btn" onClick={() => setShowSettings(false)} style={{ background: "none", color: COLORS.inkSoft }}><X size={18} /></button>
             </div>
             <p style={{ fontSize: 12.5, color: COLORS.inkSoft, marginBottom: 16 }}>
-              These preferences are local for now \u2014 wiring them to real SMS/WhatsApp sending is a later build step.
+              These preferences are local for now — wiring them to real SMS/WhatsApp sending is a later build step.
             </p>
             {[["app", "In-app notifications", Bell], ["sms", "SMS", Smartphone], ["whatsapp", "WhatsApp", MessageCircle]].map(([key, label, Icon]) => (
               <label key={key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: `1px solid ${COLORS.border}`, cursor: "pointer" }}>
