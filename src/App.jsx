@@ -183,6 +183,8 @@ export default function App() {
   const [editingMileage, setEditingMileage] = useState(false);
   const [showScoreDetail, setShowScoreDetail] = useState(false);
   const [channels, setChannels] = useState({ app: true, sms: true, whatsapp: true });
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneSaved, setPhoneSaved] = useState(false);
   const [newVehicleName, setNewVehicleName] = useState("");
   const [newVehiclePlate, setNewVehiclePlate] = useState("");
   const [newVehicleYear, setNewVehicleYear] = useState("");
@@ -228,7 +230,18 @@ export default function App() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  useEffect(() => { if (session) loadData(); }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!session) return;
+    loadData();
+    supabase.from("profiles").select("phone_number").eq("id", session.user.id).maybeSingle()
+      .then(({ data }) => { if (data?.phone_number) setPhoneNumber(data.phone_number); });
+  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function savePhoneNumber() {
+    await supabase.from("profiles").upsert({ id: session.user.id, phone_number: phoneNumber.trim() });
+    setPhoneSaved(true);
+    setTimeout(() => setPhoneSaved(false), 2000);
+  }
   useEffect(() => { setEditingMileage(false); }, [activeId]);
 
   async function handleSignOut() {
@@ -813,7 +826,23 @@ export default function App() {
               <button className="ad-btn" onClick={() => setShowSettings(false)} style={{ background: "none", color: COLORS.inkSoft }}><X size={18} /></button>
             </div>
             <p style={{ fontSize: 12.5, color: COLORS.inkSoft, marginBottom: 16 }}>
-              These preferences are local for now — wiring them to real SMS/WhatsApp sending is a later build step.
+              Add your WhatsApp number to receive real reminders before things are due. SMS support is coming soon.
+            </p>
+            <label style={{ fontSize: 12.5, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>WhatsApp number</label>
+            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+              <input
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                placeholder="+234 801 234 5678"
+                style={{ flex: 1, padding: "9px 10px", borderRadius: 7, border: `1px solid ${COLORS.border}`, fontSize: 14, boxSizing: "border-box" }}
+              />
+              <button className="ad-btn" onClick={savePhoneNumber}
+                style={{ background: phoneSaved ? COLORS.green : COLORS.ink, color: "#fff", padding: "0 14px", borderRadius: 7, fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>
+                {phoneSaved ? "Saved" : "Save"}
+              </button>
+            </div>
+            <p style={{ fontSize: 11.5, color: COLORS.inkSoft, marginBottom: 4 }}>
+              Include the country code, e.g. +234 for Nigeria. This is used for the reminders below.
             </p>
             {[["app", "In-app notifications", Bell], ["sms", "SMS", Smartphone], ["whatsapp", "WhatsApp", MessageCircle]].map(([key, label, Icon]) => (
               <label key={key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: `1px solid ${COLORS.border}`, cursor: "pointer" }}>
