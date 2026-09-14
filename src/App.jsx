@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Car, Plus, X, Check, AlertTriangle, Settings, ShieldCheck, Disc, Wrench,
   Flame, Zap, FileText, Smartphone, MessageCircle, Bell, Trash2, Gauge, Loader2,
-  Mail, LogOut, MailCheck, History, Wrench as WrenchIcon, ChevronRight,
+  Mail, LogOut, MailCheck, History, Wrench as WrenchIcon, ChevronRight, ChevronDown,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -181,6 +181,7 @@ export default function App() {
   const [editingItem, setEditingItem] = useState(null);
   const [completingItem, setCompletingItem] = useState(null);
   const [editingMileage, setEditingMileage] = useState(false);
+  const [showScoreDetail, setShowScoreDetail] = useState(false);
   const [channels, setChannels] = useState({ app: true, sms: true, whatsapp: true });
   const [newVehicleName, setNewVehicleName] = useState("");
   const [newVehiclePlate, setNewVehiclePlate] = useState("");
@@ -262,6 +263,16 @@ export default function App() {
 
   const score = useMemo(() => healthScore(counts), [counts]);
   const scoreMeta = healthLabel(score);
+  const scoreBreakdown = useMemo(() => {
+    return rows
+      .filter((r) => r.status !== "ok")
+      .map((r) => {
+        const points = r.status === "overdue" ? 18 : r.status === "soon" ? 9 : 3;
+        const reason = r.status === "overdue" ? "overdue" : `due in ${r.days} day${r.days === 1 ? "" : "s"}`;
+        return { id: r.id, label: `${r.meta.label} ${reason}`, points, status: r.status };
+      })
+      .sort((a, b) => b.points - a.points);
+  }, [rows]);
 
   const topAction = rows.length > 0 && rows[0].status !== "ok" ? rows[0] : null;
 
@@ -504,13 +515,38 @@ export default function App() {
               </div>
 
               <div style={{ marginBottom: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 6 }}>
-                  <span style={{ opacity: 0.8 }}>Vehicle health</span>
+                <button className="ad-btn" onClick={() => setShowScoreDetail((s) => !s)}
+                  style={{ display: "flex", justifyContent: "space-between", width: "100%", background: "none", fontSize: 12.5, marginBottom: 6, color: "#fff", padding: 0 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4, opacity: 0.8 }}>
+                    Vehicle health <ChevronDown size={13} style={{ transform: showScoreDetail ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+                  </span>
                   <span style={{ fontWeight: 600 }}>{score} · {scoreMeta.label}</span>
-                </div>
+                </button>
                 <div style={{ height: 7, borderRadius: 4, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
                   <div style={{ height: "100%", width: `${score}%`, background: scoreMeta.color, borderRadius: 4, transition: "width 0.3s ease" }} />
                 </div>
+                {showScoreDetail && (
+                  <div style={{ marginTop: 10, background: "rgba(255,255,255,0.06)", borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                      <span style={{ opacity: 0.75 }}>Base score</span>
+                      <span>100</span>
+                    </div>
+                    {scoreBreakdown.length === 0 ? (
+                      <div style={{ fontSize: 12.5, opacity: 0.75 }}>No deductions — everything is on track.</div>
+                    ) : (
+                      scoreBreakdown.map((d) => (
+                        <div key={d.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: STATUS_META[d.status].color === COLORS.ink ? "#fff" : STATUS_META[d.status].color }}>
+                          <span>{d.label}</span>
+                          <span>−{d.points}</span>
+                        </div>
+                      ))
+                    )}
+                    <div style={{ borderTop: "1px solid rgba(255,255,255,0.15)", marginTop: 2, paddingTop: 6, display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 600 }}>
+                      <span>Current score</span>
+                      <span>{score}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
