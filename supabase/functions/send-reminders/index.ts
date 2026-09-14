@@ -1,8 +1,9 @@
-// Supabase Edge Function: send-reminders (v2 — actually sends messages now)
+// Supabase Edge Function: send-reminders (v3 — fixes overdue items never firing)
 //
 // Runs once a day via a scheduled trigger (set up separately, see README).
 // Checks every tracked item's due_date against 30/14/7/1/0-day thresholds,
-// looks up the vehicle owner's WhatsApp number from the profiles table,
+// PLUS any item that is already overdue (fires daily until marked complete).
+// Looks up the vehicle owner's WhatsApp number from the profiles table,
 // and sends a message via the free-tier WhatsApp Business Cloud API.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -68,7 +69,12 @@ Deno.serve(async () => {
 
   for (const item of items ?? []) {
     const days = daysUntil(item.due_date);
-    if (!REMINDER_THRESHOLDS.includes(days)) continue;
+
+    // Fire on exact milestone days (30/14/7/1/0) OR every day once overdue,
+    // so a missed item keeps nudging the owner instead of going silent.
+    const isOverdue = days < 0;
+    const isMilestone = REMINDER_THRESHOLDS.includes(days);
+    if (!isOverdue && !isMilestone) continue;
 
     const vehicle = (item as any).vehicles;
     if (!vehicle?.owner_id) continue;
@@ -84,8 +90,13 @@ Deno.serve(async () => {
       continue;
     }
 
-    const dueText = days === 0 ? "today" : `in ${days} day${days === 1 ? "" : "s"}`;
-    const message = `AutoDoc360 reminder: ${item.category} for ${vehicle.name} (${vehicle.plate}) is due ${dueText}. Open the app to mark it complete.`;
+    const dueText = days === 0
+      ? "today"
+      : days > 0
+        ? `in ${days} day${days === 1 ? "" : "s"}`
+        : `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`;
+
+    const message = `AutoDoc360 reminder: ${item.category} for ${vehicle.name} (${vehicle.plate}) is ${dueText}. Open the app to mark it complete.`;
 
     attempted++;
     const result = await sendWhatsAppMessage(profile.phone_number, message);
