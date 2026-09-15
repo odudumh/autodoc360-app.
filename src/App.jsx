@@ -233,14 +233,25 @@ export default function App() {
   useEffect(() => {
     if (!session) return;
     loadData();
-    supabase.from("profiles").select("phone_number").eq("id", session.user.id).maybeSingle()
-      .then(({ data }) => { if (data?.phone_number) setPhoneNumber(data.phone_number); });
+    supabase.from("profiles").select("phone_number, whatsapp_enabled, sms_enabled").eq("id", session.user.id).maybeSingle()
+      .then(({ data }) => {
+        if (data?.phone_number) setPhoneNumber(data.phone_number);
+        if (data) setChannels((c) => ({ ...c, whatsapp: data.whatsapp_enabled ?? true, sms: data.sms_enabled ?? false }));
+      });
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function savePhoneNumber() {
     await supabase.from("profiles").upsert({ id: session.user.id, phone_number: phoneNumber.trim() });
     setPhoneSaved(true);
     setTimeout(() => setPhoneSaved(false), 2000);
+  }
+
+  async function saveChannelPref(key, value) {
+    const next = { ...channels, [key]: value };
+    setChannels(next);
+    if (!session) return;
+    if (key === "whatsapp") await supabase.from("profiles").upsert({ id: session.user.id, whatsapp_enabled: value });
+    if (key === "sms") await supabase.from("profiles").upsert({ id: session.user.id, sms_enabled: value });
   }
   useEffect(() => { setEditingMileage(false); }, [activeId]);
 
@@ -844,11 +855,17 @@ export default function App() {
             <p style={{ fontSize: 11.5, color: COLORS.inkSoft, marginBottom: 4 }}>
               Include the country code, e.g. +234 for Nigeria. This is used for the reminders below.
             </p>
-            {[["app", "In-app notifications", Bell], ["sms", "SMS", Smartphone], ["whatsapp", "WhatsApp", MessageCircle]].map(([key, label, Icon]) => (
-              <label key={key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: `1px solid ${COLORS.border}`, cursor: "pointer" }}>
+            {[
+              ["whatsapp", "WhatsApp (live)", MessageCircle, true],
+              ["sms", "SMS (live)", Smartphone, true],
+              ["app", "In-app notifications (coming soon)", Bell, false],
+            ].map(([key, label, Icon, isLive]) => (
+              <label key={key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: `1px solid ${COLORS.border}`, cursor: "pointer", opacity: isLive ? 1 : 0.6 }}>
                 <Icon size={17} color={COLORS.inkSoft} />
                 <span style={{ flex: 1, fontSize: 14, color: COLORS.ink }}>{label}</span>
-                <input type="checkbox" checked={channels[key]} onChange={() => setChannels((c) => ({ ...c, [key]: !c[key] }))} style={{ width: 17, height: 17 }} />
+                <input type="checkbox" checked={channels[key]} disabled={!isLive}
+                  onChange={isLive ? (() => saveChannelPref(key, !channels[key])) : undefined}
+                  style={{ width: 17, height: 17 }} />
               </label>
             ))}
             <button className="ad-btn" onClick={() => setShowSettings(false)}
